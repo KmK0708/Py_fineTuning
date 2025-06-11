@@ -2,7 +2,7 @@ import os
 # openai 가져오기
 from openai import OpenAI
 
-os.environ["OPENAI_API_KEY"] = '123' # 커밋할때 오류뜨니 바꿈
+os.environ["OPENAI_API_KEY"] = '1234' # 커밋할때 오류뜨니 바꿈
 
 # client 인스턴스 가져오기
 client = OpenAI()
