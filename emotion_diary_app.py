@@ -7,7 +7,7 @@ from openai import OpenAI
 import json
 
 # 🔑 OpenAI API 설정
-os.environ["OPENAI_API_KEY"] = "s123"  # 여기에 실제 키 입력 # 커밋할때 오류뜨니 바꿈
+os.environ["OPENAI_API_KEY"] = "123"  # 여기에 실제 키 입력 # 커밋할때 오류뜨니 바꿈
 client = OpenAI()
 
 # Streamlit UI 설정
