@@ -134,6 +134,7 @@ venv.bak/
 
 # API 키 및 민감 정보
 .streamlit/secrets.toml
+.env/.env
 
 # 가상환경 폴더
 testing_virtual/
