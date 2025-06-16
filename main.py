@@ -6,6 +6,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException        # - FastAPI:
 from pydantic import BaseModel      # Pydantic 모델 선언용 (입력 데이터 구조 정의에 필요)
 from dotenv import load_dotenv      # .env 환경 변수 파일 로드를 위한 라이브러리
 from openai import OpenAI       # OpenAI API를 사용하기 위한 클라이언트
+# -- CORS 허용 (크로스 도메인 통신 허용) -- #
+from fastapi.middleware.cors import CORSMiddleware
 
 
 # .env 파일의 경로를 절대 경로로 명시
@@ -19,38 +21,49 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))    # - 인증 실패 시 �
 # FastAPI 애플리케이션 인스턴스 생성
 app = FastAPI()  # - 이후 라우터(@app.get, @app.post 등)에서 사용함
 
+# 기존 코드
+# load_dotenv()
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ✅ 요청 모델
+# app = FastAPI()
+
+
+#  요청 모델 정의
+# FastAPI에서 사용자의 요청 데이터를 구조화하기 위해 Pydantic 모델을 사용
 class DiaryRequest(BaseModel):
-    kakao_text: str
-    search_log: str | None = "없음"
+    kakao_text: str                         # 사용자로부터 전달받은 카카오톡 텍스트 데이터
+    search_log: str | None = "없음"         # 선택적인 검색 기록 (기본값: "없음")
 
 
-# ✅ 오늘 날짜를 카카오톡 날짜 포맷에 맞게 반환
+#  오늘 날짜를 카카오톡 날짜 포맷에 맞게(예: 2025년 6월 17일) 반환하는 함수
 def get_today_str_kakao():
-    today = datetime.now()
-    return f"{today.year}년 {today.month}월 {today.day}일"
+    today = datetime.now()                                      # 현재 날짜 및 시간 객체 생성
+    return f"{today.year}년 {today.month}월 {today.day}일"      # 카카오톡 형식에 맞춰 문자열로 반환
 
+#  카카오톡 txt 파일에서 대화 내용만 추출하는 함수
+# - 날짜 기준이 아닌 전체 텍스트 중 유효한 대화 메시지를 필터링함
+def extract_today_chat(text: str, _: str = "") -> str:          
+    lines = text.splitlines()         # 텍스트를 줄 단위로 나눔
+    chat = []                         # 유효한 메시지를 저장할 리스트
 
-def extract_today_chat(text: str, _: str = "") -> str:
-    lines = text.splitlines()
-    chat = []
-
-    # ✅ [이름] [오후 3:36] 메시지
+    #  [이름] [오후 3:36] 메시지
+    #  정규 표현식 정의: '[이름] [오전/오후 시:분] 메시지' 패턴 추출용
     msg = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
 
     for ln in lines:
-        ln = ln.strip()
-        m = msg.match(ln)
-        if m:
-            msg_txt = m.group(3).strip()
+        ln = ln.strip()     # 각 줄의 앞뒤 공백 제거
+        matching = msg.match(ln)       # 정규표현식과 매칭 시도
+        if matching:        
+            msg_txt = matching.group(3).strip()     # 대화 내용만 추출 (이름/시간 제외)
+            # 시스템 메시지나 불필요한 항목 필터링
+            # 예: [사진], 이모티콘, 입장/퇴장 알림 등은 제외
             if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔"]):
-                chat.append(msg_txt)
+                chat.append(msg_txt)    # 유효한 메시지만 리스트에 추가하기
 
-    return "\n".join(chat[-30:])
+    return "\n".join(chat[-30:]) # 최근 메시지 30개만 추출하여 반환하기 (추후 변동 예정)
 
 
-# ✅ 1. 카카오톡 txt 업로드 및 오늘 대화 미리보기
+# ✅ 1. 카카오톡 txt 업로드 및 오늘 대화 미리보기.... Auto_diary로 대체
 @app.post("/upload-kakao")
 async def upload_kakao(file: UploadFile = File(...)):
     try:
@@ -229,29 +242,13 @@ async def auto_diary(file: UploadFile = File(...), search_log: str = "없음"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-## ----- 아래는 아직 미적용한 코드 ----- ## 
-# from fastapi.middleware.cors import CORSMiddleware
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # 또는 Flutter 앱 도메인만 제한적으로
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+## 아래는 아직 적용 안된코드들 ##
 
 
-        # ### 작성 지침
-        # 1) 사용자 대화에는 감정이 숨겨져 있을 수 있으므로, 상황의 흐름과 말투에서 감정을 섬세하게 추론하세요.
-        # 2) 아래 JSON **구조** 그대로 채워서 출력하세요(필드명 변경 금지).
-        # 3) 예시처럼 각 항목은 3문장 이상, 따뜻하고 진심 어린 말로 작성하세요.
-        # 4) 외국어, 욕설이 있어도 무시하지 말고 감정을 정확히 해석하세요.
-
-        # {{
-        #   "상황설명": "...",
-        #   "감정표현": "...",
-        #   "공감과인정": "...",
-        #   "따뜻한위로": "...",
-        #   "실용적제안": "..."
-        # }}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 또는 Flutter 앱 도메인만 제한적으로
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
