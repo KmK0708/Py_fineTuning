@@ -1,16 +1,23 @@
-import os
-import re
-import json
-from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from openai import OpenAI
+import os       # - os: 파일 경로 등 시스템 관련 작업
+import re       # - re: 정규표현식(채팅 필터링 등)
+import json     # - json: OpenAI 응답 파싱용
+from datetime import datetime       # - datetime: 오늘 날짜 포맷용
+from fastapi import FastAPI, UploadFile, File, HTTPException        # - FastAPI: 웹 프레임워크 - UploadFile, File: 파일 업로드 처리 - HTTPException: 에러 응답 반환 시 사용
+from pydantic import BaseModel      # Pydantic 모델 선언용 (입력 데이터 구조 정의에 필요)
+from dotenv import load_dotenv      # .env 환경 변수 파일 로드를 위한 라이브러리
+from openai import OpenAI       # OpenAI API를 사용하기 위한 클라이언트
 
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-app = FastAPI()
+# .env 파일의 경로를 절대 경로로 명시
+# - uvicorn처럼 별도 프로세스에서 실행할 때 상대경로 문제 방지 안했을때 집에서 됐던게 학교에선 안됐음..
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path)        # 위에서 지정한 경로의 .env 파일을 로드 (환경 변수 설정)
+print("✅ API 키 확인:", os.getenv("OPENAI_API_KEY"))   # 환경 변수가 제대로 로드되었는지 확인용 (디버깅) - .env 에 api 키 있는데 안불러와져서 확인차 작성
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))    # - 인증 실패 시 에러 발생 가능하므로 os.getenv()가 None이면 예외 처리 필요
+
+# FastAPI 애플리케이션 인스턴스 생성
+app = FastAPI()  # - 이후 라우터(@app.get, @app.post 등)에서 사용함
 
 
 # ✅ 요청 모델
@@ -221,6 +228,18 @@ async def auto_diary(file: UploadFile = File(...), search_log: str = "없음"):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+## ----- 아래는 아직 미적용한 코드 ----- ## 
+# from fastapi.middleware.cors import CORSMiddleware
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # 또는 Flutter 앱 도메인만 제한적으로
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 
         # ### 작성 지침
