@@ -8,6 +8,7 @@ from dotenv import load_dotenv      # .env 환경 변수 파일 로드를 위한
 from openai import OpenAI       # OpenAI API를 사용하기 위한 클라이언트
 # -- CORS 허용 (크로스 도메인 통신 허용) -- #
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 
 
 # .env 파일의 경로를 절대 경로로 명시
@@ -449,7 +450,8 @@ def generate_diary(data: DiaryRequest):
     """
     개선된 프롬프트 처리 로직을 사용하는 감성 일기 생성 엔드포인트
     """
-    return generate_diary_with_prompt_handling(data)
+    diary = generate_diary_with_prompt_handling(data)
+    return ORJSONResponse(content=diary)
     
 @app.post("/auto-diary")
 async def auto_diary(
@@ -515,7 +517,7 @@ async def auto_diary(
         if target_date:
             diary["target_date"] = target_date
 
-        return diary
+        return ORJSONResponse(content=diary)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -759,7 +761,7 @@ async def consistency_test_endpoint(
             "test_count": test_count
         }
         
-        return test_result
+        return ORJSONResponse(content=test_result)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -770,7 +772,7 @@ async def consistency_test_info():
     """
     일관성 테스트 기능에 대한 정보를 제공하는 엔드포인트
     """
-    return {
+    return ORJSONResponse(content={
         "message": "일관성 테스트 기능이 구현되었습니다!",
         "description": "동일한 입력에 대해 여러 번 테스트하여 결과의 일관성을 검증합니다.",
         "endpoint": "/consistency-test",
@@ -791,7 +793,7 @@ async def consistency_test_info():
             "일관성 점수가 0.6 이상이면 양호한 수준입니다",
             "낮은 일관성은 프롬프트 개선이 필요할 수 있습니다"
         ]
-    }
+    })
 
 # 날짜별 분석 기능 테스트 엔드포인트
 @app.get("/test-date-analysis")
@@ -799,7 +801,7 @@ async def test_date_analysis():
     """
     날짜별 분석 기능 테스트를 위한 정보 제공 엔드포인트
     """
-    return {
+    return ORJSONResponse(content={
         "message": "날짜별 분석 기능이 성공적으로 구현되었습니다!",
         "features": {
             "extract_chat_by_date": "카카오톡 대화를 날짜별로 구분",
@@ -816,7 +818,7 @@ async def test_date_analysis():
             "target_date": "특정 날짜 지정 (예: '20일', '19일')",
             "available_dates": "파일에서 감지된 모든 날짜 목록"
         }
-    }
+    })
 
 # CORS 미들웨어 설정
 app.add_middleware(
