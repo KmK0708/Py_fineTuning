@@ -827,4 +827,31 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-) 
+)
+
+# 루트 엔드포인트 - 서버 연결 확인용
+@app.get("/")
+async def root():
+    """
+    서버 연결 확인을 위한 루트 엔드포인트
+    """
+    return ORJSONResponse(content={
+        "message": "감성 일기 생성 서버가 정상적으로 실행 중입니다!",
+        "status": "running",
+        "version": "1.0.0",
+        "available_endpoints": [
+            "/",
+            "/generate-diary",
+            "/auto-diary", 
+            "/consistency-test",
+            "/consistency-test-info",
+            "/test-date-analysis"
+        ],
+        "features": [
+            "카카오톡 대화 기반 감성 일기 생성",
+            "프롬프트 충돌 감지 및 처리",
+            "날짜별 대화 분석",
+            "일관성 테스트",
+            "감정 분석"
+        ]
+    }) 
