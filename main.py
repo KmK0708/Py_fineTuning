@@ -2,7 +2,7 @@ import os       # - os: 파일 경로 등 시스템 관련 작업
 import re       # - re: 정규표현식(채팅 필터링 등)
 import json     # - json: OpenAI 응답 파싱용
 from datetime import datetime       # - datetime: 오늘 날짜 포맷용
-from fastapi import FastAPI, UploadFile, File, HTTPException        # - FastAPI: 웹 프레임워크 - UploadFile, File: 파일 업로드 처리 - HTTPException: 에러 응답 반환 시 사용
+from fastapi import FastAPI, UploadFile, File, HTTPException,Form        # - FastAPI: 웹 프레임워크 - UploadFile, File: 파일 업로드 처리 - HTTPException: 에러 응답 반환 시 사용
 from pydantic import BaseModel      # Pydantic 모델 선언용 (입력 데이터 구조 정의에 필요)
 from dotenv import load_dotenv      # .env 환경 변수 파일 로드를 위한 라이브러리
 from openai import OpenAI       # OpenAI API를 사용하기 위한 클라이언트
@@ -57,72 +57,59 @@ def extract_today_chat(text: str, _: str = "") -> str:
 
     return "\n".join(chat[-30:]) # 최근 메시지 30개만 추출하여 반환하기 (추후 변동 예정)
 
-# 카카오톡 대화를 날짜별로 구분하여 추출하는 함수
-def extract_chat_by_date(text: str, target_date: str | None = None) -> dict:
-    """
-    카카오톡 대화를 날짜별로 구분하여 추출합니다.
-    
-    Args:
-        text: 카카오톡 txt 파일 내용
-        target_date: 특정 날짜 (예: "20일", "19일"). None이면 모든 날짜 반환
-    
-    Returns:
-        dict: {
-            "20일": ["메시지1", "메시지2", ...],
-            "19일": ["메시지1", "메시지2", ...],
-            ...
-        }
-    """
+# 카카오톡 대화를 월/일 기준으로 구분하여 추출하는 함수
+def extract_chat_by_date(text: str, target_date: str | None = None):
+    import re
     lines = text.splitlines()
-    chat_by_date = {}  # 날짜별 대화 저장
+    chat_by_date = {}
     current_date = None
-    
-    # 날짜 패턴: "2025년 1월 20일" 또는 "1월 20일" 형식
-    date_pattern = re.compile(r"(\d{4}년\s*)?(\d{1,2}월\s*\d{1,2}일)")
-    # 메시지 패턴: [이름] [오전/오후 시:분] 메시지
+    date_pattern = re.compile(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일")
     msg_pattern = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
-    
+    last_msg_ref = None  # 마지막 메시지 리스트의 참조
     for line in lines:
         line = line.strip()
-        
-        # 날짜 라인인지 확인
         date_match = date_pattern.search(line)
         if date_match:
-            # 날짜 추출 (예: "20일" 형태로 변환)
-            date_str = date_match.group(2)  # "1월 20일"
-            day_match = re.search(r"(\d{1,2})일", date_str)
-            if day_match:
-                current_date = day_match.group(1) + "일"
-                if current_date not in chat_by_date:
-                    chat_by_date[current_date] = []
+            date_str = f"{date_match.group(1)}년 {int(date_match.group(2))}월 {int(date_match.group(3))}일"
+            current_date = date_str
+            if current_date not in chat_by_date:
+                chat_by_date[current_date] = []
+            last_msg_ref = None
             continue
-        
-        # 메시지 라인인지 확인
         msg_match = msg_pattern.match(line)
         if msg_match and current_date:
             msg_txt = msg_match.group(3).strip()
-            # 시스템 메시지 필터링
             if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔"]):
                 chat_by_date[current_date].append(msg_txt)
-    
-    # 특정 날짜만 요청한 경우
+                last_msg_ref = chat_by_date[current_date]
+        elif current_date and last_msg_ref is not None and line:
+            # 메시지 줄이 아니고, 빈 줄도 아니면 이전 메시지에 이어붙임
+            last_msg_ref[-1] += "\n" + line
+    chat_by_date = {k.strip(): v for k, v in chat_by_date.items()}
+    print(f"📅 추출된 날짜 목록: {list(chat_by_date.keys())}")
+    # 이하 기존 로직 동일
     if target_date:
-        return {target_date: chat_by_date.get(target_date, [])}
-    
-    return chat_by_date
+        if target_date in chat_by_date:
+            return {target_date: chat_by_date[target_date]}, target_date
+        m = re.match(r"(\d{1,2})월\s*(\d{1,2})일", target_date)
+        if m:
+            month, day = int(m.group(1)), int(m.group(2))
+            candidates = []
+            for k in chat_by_date.keys():
+                m2 = re.match(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일", k)
+                if m2 and int(m2.group(2)) == month and int(m2.group(3)) == day:
+                    candidates.append((int(m2.group(1)), k))
+            if candidates:
+                latest = sorted(candidates, reverse=True)[0][1]
+                return {latest: chat_by_date[latest]}, latest
+            else:
+                return {target_date: []}, target_date
+        return {target_date: []}, target_date
+    return chat_by_date, None
 
 # 특정 날짜의 대화를 문자열로 변환하는 함수
+# target_date는 반드시 '6월 2일' 등 월/일 형식이어야 함
 def get_chat_for_date(chat_by_date: dict, target_date: str) -> str:
-    """
-    특정 날짜의 대화를 문자열로 변환합니다.
-    
-    Args:
-        chat_by_date: 날짜별 대화 딕셔너리
-        target_date: 원하는 날짜 (예: "20일")
-    
-    Returns:
-        str: 해당 날짜의 대화 내용
-    """
     if target_date in chat_by_date:
         return "\n".join(chat_by_date[target_date])
     return ""
@@ -439,10 +426,51 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         if conflict_info:
             diary["conflict_info"] = conflict_info
 
+        # 4단계: 감정 수치 분석 프롬프트 추가
+        emotion_prompt = f"""
+        아래 카카오톡 대화 내용을 바탕으로, 감정 상태를 '좋음', '평범함', '나쁨' 세 가지로 분류하고
+        각 감정이 차지하는 비율(%)을 추정해서 아래 JSON 형식으로만 응답하세요.
+        반드시 세 감정의 합이 100이 되도록 하세요.
+
+        예시:
+        {{
+          "좋음": 40,
+          "평범함": 35,
+          "나쁨": 25
+        }}
+
+        대화 내용:
+        {data.kakao_text}
+        """
+        try:
+            emotion_response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": emotion_prompt}],
+                temperature=0.2
+            )
+            emotion_content = emotion_response.choices[0].message.content
+            if emotion_content is not None and "```json" in emotion_content:
+                emotion_content = emotion_content.split("```json")[1].split("```", 1)[0].strip()
+            if emotion_content is not None:
+                emotions = json.loads(emotion_content)
+            else:
+                emotions = {"좋음": 33, "평범함": 34, "나쁨": 33}  # 실패 시 기본값
+        except Exception as e:
+            print(f"감정 분석 실패: {e}")
+            emotions = {"좋음": 33, "평범함": 34, "나쁨": 33}  # 실패 시 기본값
+        diary["emotions"] = emotions  # 감정 수치 추가
+
         return diary
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+def str_to_bool(val):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ("true", "1", "yes")
+    return False
 
 # ✅ 2. 요약 + 감정 분석 포함된 감성 일기 생성
 @app.post("/generate-diary")
@@ -455,51 +483,38 @@ def generate_diary(data: DiaryRequest):
     
 @app.post("/auto-diary")
 async def auto_diary(
-    file: UploadFile = File(...), 
-    search_log: str = "없음",
-    user_prompt: str | None = None,
-    use_prompt: bool = True,
-    use_date_analysis: bool = False,  # 날짜별 분석 사용 여부
-    target_date: str | None = None    # 특정 날짜 (use_date_analysis가 True일 때)
+    file: UploadFile = File(...),
+    search_log: str = Form("없음"),
+    user_prompt: str | None = Form(None),
+    use_prompt: bool = Form(True),
+    use_date_analysis: bool = Form(False),
+    target_date: str | None = Form(None)
 ):
     """
     카카오톡 파일 업로드와 프롬프트 처리를 통합한 자동 일기 생성 엔드포인트
-    날짜별 분석 옵션 추가
+    날짜별 분석만 지원 (최신 30줄 추출 분기 제거)
     """
     try:
         content = (await file.read()).decode("utf-8", errors="ignore")
 
-        if use_date_analysis:
-            # 날짜별 분석 모드
-            chat_by_date = extract_chat_by_date(content, target_date)
-            
-            if not chat_by_date:
-                raise HTTPException(status_code=400, detail="날짜별 대화가 감지되지 않았습니다.")
-            
-            # 특정 날짜가 지정되지 않았으면 가장 최근 날짜 사용
-            if target_date is None:
-                available_dates = list(chat_by_date.keys())
-                if available_dates:
-                    target_date = available_dates[-1]  # 가장 최근 날짜
-                else:
-                    raise HTTPException(status_code=400, detail="유효한 날짜가 없습니다.")
-            
-            # 해당 날짜의 대화 내용
-            if target_date is not None:
-                kakao_text = get_chat_for_date(chat_by_date, target_date)
-            else:
-                raise HTTPException(status_code=400, detail="유효한 날짜가 없습니다.")
-            
-            if not kakao_text.strip():
-                raise HTTPException(status_code=400, detail=f"{target_date}에 유효한 대화가 없습니다.")
-                
-        else:
-            # 기존 방식 (최근 30줄)
-            kakao_text = extract_today_chat(content)
-            target_date = None
+        print(f"[DEBUG] 실제 받은 target_date: {target_date}")
+        # target_date가 None이거나 빈 문자열이면 에러 반환
+        if not target_date or not target_date.strip():
+            raise HTTPException(status_code=400, detail="target_date 파라미터가 필요합니다.")
 
+        # 무조건 날짜별 분석 분기만 사용
+        chat_by_date, real_target_date = extract_chat_by_date(content, target_date)
+        print(f"[DEBUG] chat_by_date.keys(): {list(chat_by_date.keys())}")
+        if not chat_by_date:
+            raise HTTPException(status_code=400, detail="날짜별 대화가 감지되지 않았습니다.")
+        # 실제 날짜 key 사용
+        if real_target_date is None:
+            raise HTTPException(status_code=400, detail="요청한 날짜와 일치하는 대화가 없습니다.")
+        # 해당 날짜의 대화 내용
+        kakao_text = get_chat_for_date(chat_by_date, real_target_date)
         if not kakao_text.strip():
-            raise HTTPException(status_code=400, detail="카카오톡 대화가 감지되지 않았습니다.")
+            raise HTTPException(status_code=400, detail=f"{real_target_date}에 유효한 대화가 없습니다.")
+        target_date = real_target_date  # 이후 응답에도 실제 날짜로 표시
 
         # DiaryRequest 객체 생성하여 통합 처리
         diary_request = DiaryRequest(
@@ -512,11 +527,9 @@ async def auto_diary(
         # 개선된 프롬프트 처리 로직으로 일기 생성
         diary = generate_diary_with_prompt_handling(diary_request)
         diary["kakao_text"] = kakao_text
-        
         # 날짜 정보 추가
         if target_date:
             diary["target_date"] = target_date
-
         return ORJSONResponse(content=diary)
 
     except Exception as e:
@@ -723,7 +736,7 @@ async def consistency_test_endpoint(
         
         if use_date_analysis:
             # 날짜별 분석 모드
-            chat_by_date = extract_chat_by_date(content, target_date)
+            chat_by_date, real_target_date = extract_chat_by_date(content, target_date)
             
             if not chat_by_date:
                 raise HTTPException(status_code=400, detail="날짜별 대화가 감지되지 않았습니다.")
