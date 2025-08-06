@@ -1206,3 +1206,22 @@ async def flutter_api_status():
             "/auto-diary"
         ]
     }) 
+
+# Render.com 배포를 위한 서버 실행 코드
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    
+    # Render.com에서 제공하는 포트 사용
+    port = int(os.environ.get("PORT", 8000))
+    
+    print(f"🚀 서버를 시작합니다... (포트: {port})")
+    print(f"🌐 웹 접속: http://localhost:{port}")
+    print(f"📱 API 문서: http://localhost:{port}/docs")
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False  # 프로덕션에서는 reload 비활성화
+    ) 
