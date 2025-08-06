@@ -2,13 +2,19 @@ import os       # - os: 파일 경로 등 시스템 관련 작업
 import re       # - re: 정규표현식(채팅 필터링 등)
 import json     # - json: OpenAI 응답 파싱용
 from datetime import datetime       # - datetime: 오늘 날짜 포맷용
-from fastapi import FastAPI, UploadFile, File, HTTPException,Form        # - FastAPI: 웹 프레임워크 - UploadFile, File: 파일 업로드 처리 - HTTPException: 에러 응답 반환 시 사용
+from fastapi import FastAPI, UploadFile, File, HTTPException,Form, Request, Depends        # - FastAPI: 웹 프레임워크 - UploadFile, File: 파일 업로드 처리 - HTTPException: 에러 응답 반환 시 사용
 from pydantic import BaseModel      # Pydantic 모델 선언용 (입력 데이터 구조 정의에 필요)
 from dotenv import load_dotenv      # .env 환경 변수 파일 로드를 위한 라이브러리
 from openai import OpenAI       # OpenAI API를 사용하기 위한 클라이언트
 # -- CORS 허용 (크로스 도메인 통신 허용) -- #
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import hashlib
+import secrets
+from datetime import datetime, timedelta
 
 
 # .env 파일의 경로를 절대 경로로 명시
@@ -19,8 +25,71 @@ print("✅ API 키 확인:", os.getenv("OPENAI_API_KEY"))   # 환경 변수가 �
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))    # - 인증 실패 시 에러 발생 가능하므로 os.getenv()가 None이면 예외 처리 필요
 
+# 사용자 모델
+class User(BaseModel):
+    id: int
+    username: str
+    email: str
+    created_at: datetime
+
+# 간단한 인메모리 사용자 저장소 (실제 프로덕션에서는 데이터베이스 사용)
+users_db = {}
+sessions_db = {}
+
+def hash_password(password: str) -> str:
+    """비밀번호 해시화"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_session(user_id: int) -> str:
+    """세션 생성"""
+    session_token = secrets.token_urlsafe(32)
+    sessions_db[session_token] = {
+        "user_id": user_id,
+        "created_at": datetime.now(),
+        "expires_at": datetime.now() + timedelta(days=7)
+    }
+    return session_token
+
+def get_user_from_session(session_token: str) -> User | None:
+    """세션에서 사용자 정보 가져오기"""
+    if session_token not in sessions_db:
+        return None
+    
+    session = sessions_db[session_token]
+    if datetime.now() > session["expires_at"]:
+        del sessions_db[session_token]
+        return None
+    
+    user_id = session["user_id"]
+    if user_id not in users_db:
+        return None
+    
+    return users_db[user_id]
+
+def get_current_user(request: Request) -> User | None:
+    """현재 로그인한 사용자 가져오기"""
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return None
+    return get_user_from_session(session_token)
+
 # FastAPI 애플리케이션 인스턴스 생성
 app = FastAPI()  # - 이후 라우터(@app.get, @app.post 등)에서 사용함
+
+# 정적 파일 및 템플릿 설정
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# 회원가입 요청 모델
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+# 로그인 요청 모델
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 #  요청 모델 정의
 # FastAPI에서 사용자의 요청 데이터를 구조화하기 위해 Pydantic 모델을 사용
@@ -343,8 +412,15 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         ### 작성 규칙
         1. 대화 내용을 객관적으로 분석하여 일관된 해석을 제공해야 합니다.
         2. 감정은 대화의 맥락과 말투에서 추론하되, 과도한 추측은 지양해야 합니다.
-        3. 각 섹션은 명확한 역할과 구조를 가져야 하며, 2-3 문장으로 작성해야 합니다.
+        3. 각 섹션은 명확한 역할과 구조를 가져야 하며, 중복되지 않는 고유한 내용을 작성해야 합니다.
         4. 사용자 의도가 있다면 최우선으로 고려하되, 대화 내용과의 일관성을 유지해야 합니다.
+
+        ### 각 섹션별 역할
+        - 상황설명: 구체적인 사건, 장소, 시간, 참여자 등 객관적 사실 중심
+        - 감정표현: 대화에서 드러난 감정과 분위기 분석
+        - 공감과인정: 상황에 대한 이해와 공감 표현
+        - 따뜻한위로: 감정적 지지와 위로
+        - 실용적제안: 구체적이고 실용적인 조언이나 대안
 
         ### 예시 (이 구조와 스타일을 반드시 따르세요)
         ---
@@ -356,11 +432,11 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
 
         #### 출력
         {{
-          "상황설명": "친구와 함께 영화관에 방문하여 영화를 관람했습니다. 영화 자체는 매우 재미있게 즐겼지만, 매점에서 판매하는 팝콘의 가격이 예상보다 비싸다고 느꼈습니다.",
-          "감정표현": "영화에 대한 즐거움과 긍정적인 감정이 주를 이루고 있습니다. 동시에, 팝콘 가격에 대해서는 아쉬움과 약간의 불만 섞인 감정이 드러납니다.",
-          "공감과인정": "영화를 보며 즐거운 시간을 보내셨군요! 재미있는 영화는 하루를 특별하게 만들어주죠. 하지만 비싼 팝콘 가격에 아쉬움을 느끼는 마음도 충분히 이해됩니다.",
-          "따뜻한위로": "즐거운 경험에 작은 아쉬움이 더해져 속상하셨겠어요. 그래도 영화가 재미있었다니 정말 다행이에요. 그 즐거운 기억에 더 집중해보는 건 어떨까요?",
-          "실용적제안": "다음에는 영화관에 가기 전에 미리 간식을 준비하거나, 통신사 할인 등 팝콘을 저렴하게 구매할 수 있는 팁을 찾아보는 것도 좋은 방법이 될 수 있습니다."
+          "상황설명": "오후 2시경 친구와 함께 CGV 영화관을 방문하여 새로 개봉한 액션 영화를 관람했습니다. 영화는 2시간 30분간 진행되었으며, 매점에서 팝콘과 음료를 구매하려 했으나 가격이 예상보다 높아 놀랐습니다.",
+          "감정표현": "영화 관람 중에는 스릴과 재미로 가득한 긍정적인 감정이 주를 이루었습니다. 하지만 매점에서의 가격 충격으로 인해 약간의 아쉬움과 불만이 섞인 복합적인 감정을 경험했습니다.",
+          "공감과인정": "친구와 함께 영화를 보며 즐거운 시간을 보내신 것 같아요. 좋은 영화는 하루를 특별하게 만들어주죠. 하지만 갑작스러운 가격 충격에 당황하신 마음도 충분히 이해됩니다.",
+          "따뜻한위로": "즐거운 영화 관람에 작은 아쉬움이 더해져서 속상하셨겠어요. 그래도 영화 자체는 재미있었다니 정말 다행이에요. 그 즐거운 기억에 더 집중해보시는 건 어떨까요?",
+          "실용적제안": "다음 영화 관람 시에는 미리 영화관 홈페이지에서 매점 메뉴와 가격을 확인하거나, 통신사 할인, 멤버십 포인트 등을 활용해서 더 저렴하게 이용할 수 있는 방법을 찾아보시는 것을 추천합니다."
         }}
         ---
 
@@ -443,22 +519,47 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         {data.kakao_text}
         """
         try:
+            print("🔍 감정 분석 시작...")
             emotion_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": emotion_prompt}],
                 temperature=0.2
             )
             emotion_content = emotion_response.choices[0].message.content
+            print(f"감정 분석 API 응답: {emotion_content}")
+            
             if emotion_content is not None and "```json" in emotion_content:
                 emotion_content = emotion_content.split("```json")[1].split("```", 1)[0].strip()
             if emotion_content is not None:
                 emotions = json.loads(emotion_content)
+                print(f"파싱된 감정 데이터: {emotions}")
             else:
                 emotions = {"좋음": 33, "평범함": 34, "나쁨": 33}  # 실패 시 기본값
+                print("감정 분석 응답이 비어있어 기본값 사용")
         except Exception as e:
             print(f"감정 분석 실패: {e}")
             emotions = {"좋음": 33, "평범함": 34, "나쁨": 33}  # 실패 시 기본값
-        diary["emotions"] = emotions  # 감정 수치 추가
+        # 감정 수치를 Flutter 앱과 웹 버전에 맞게 처리
+        # Flutter 앱용 (한글 키)
+        emotions_flutter = {
+            "좋음": emotions.get("좋음", 33),
+            "평범함": emotions.get("평범함", 34),
+            "나쁨": emotions.get("나쁨", 33)
+        }
+        
+        # 웹용 (영어 키)
+        emotions_web = {
+            "good": emotions.get("좋음", 33),
+            "normal": emotions.get("평범함", 34),
+            "bad": emotions.get("나쁨", 33)
+        }
+        
+        print(f"Flutter용 감정 데이터: {emotions_flutter}")
+        print(f"웹용 감정 데이터: {emotions_web}")
+        
+        # 요청 경로에 따라 다른 형식 제공
+        diary["emotions"] = emotions_flutter  # 기본적으로 Flutter 앱용 형식 사용
+        diary["emotions_web"] = emotions_web  # 웹용도 함께 제공
 
         return diary
 
@@ -492,29 +593,35 @@ async def auto_diary(
 ):
     """
     카카오톡 파일 업로드와 프롬프트 처리를 통합한 자동 일기 생성 엔드포인트
-    날짜별 분석만 지원 (최신 30줄 추출 분기 제거)
     """
     try:
         content = (await file.read()).decode("utf-8", errors="ignore")
 
         print(f"[DEBUG] 실제 받은 target_date: {target_date}")
-        # target_date가 None이거나 빈 문자열이면 에러 반환
-        if not target_date or not target_date.strip():
-            raise HTTPException(status_code=400, detail="target_date 파라미터가 필요합니다.")
+        print(f"[DEBUG] use_date_analysis: {use_date_analysis}")
 
-        # 무조건 날짜별 분석 분기만 사용
-        chat_by_date, real_target_date = extract_chat_by_date(content, target_date)
-        print(f"[DEBUG] chat_by_date.keys(): {list(chat_by_date.keys())}")
-        if not chat_by_date:
-            raise HTTPException(status_code=400, detail="날짜별 대화가 감지되지 않았습니다.")
-        # 실제 날짜 key 사용
-        if real_target_date is None:
-            raise HTTPException(status_code=400, detail="요청한 날짜와 일치하는 대화가 없습니다.")
-        # 해당 날짜의 대화 내용
-        kakao_text = get_chat_for_date(chat_by_date, real_target_date)
-        if not kakao_text.strip():
-            raise HTTPException(status_code=400, detail=f"{real_target_date}에 유효한 대화가 없습니다.")
-        target_date = real_target_date  # 이후 응답에도 실제 날짜로 표시
+        if use_date_analysis and target_date and target_date.strip():
+            # 날짜별 분석 모드
+            chat_by_date, real_target_date = extract_chat_by_date(content, target_date)
+            print(f"[DEBUG] chat_by_date.keys(): {list(chat_by_date.keys())}")
+            
+            if not chat_by_date:
+                raise HTTPException(status_code=400, detail="날짜별 대화가 감지되지 않았습니다.")
+            
+            # 실제 날짜 key 사용
+            if real_target_date is None:
+                raise HTTPException(status_code=400, detail="요청한 날짜와 일치하는 대화가 없습니다.")
+            
+            # 해당 날짜의 대화 내용
+            kakao_text = get_chat_for_date(chat_by_date, real_target_date)
+            if not kakao_text.strip():
+                raise HTTPException(status_code=400, detail=f"{real_target_date}에 유효한 대화가 없습니다.")
+            
+            target_date = real_target_date  # 이후 응답에도 실제 날짜로 표시
+        else:
+            # 기존 방식 (최근 30줄)
+            kakao_text = extract_today_chat(content)
+            target_date = None
 
         # DiaryRequest 객체 생성하여 통합 처리
         diary_request = DiaryRequest(
@@ -526,14 +633,49 @@ async def auto_diary(
 
         # 개선된 프롬프트 처리 로직으로 일기 생성
         diary = generate_diary_with_prompt_handling(diary_request)
+        
+        # Flutter 앱 호환성을 위한 응답 형식 보장
         diary["kakao_text"] = kakao_text
-        # 날짜 정보 추가
+        diary["success"] = True  # 성공 플래그 추가
+        
+        # 날짜 정보 추가 (Flutter 앱에서 사용하는 필드들)
         if target_date:
             diary["target_date"] = target_date
+            diary["date"] = target_date
+        else:
+            # 기존 방식 사용 시 오늘 날짜 설정
+            diary["date"] = get_today_str_kakao()
+        
+        # Flutter 앱에서 기대하는 필드들 보장
+        if "diary" not in diary and "content" in diary:
+            diary["diary"] = diary["content"]
+        
+        # 웹에서 기대하는 필드들 보장
+        if "diary" not in diary:
+            # 각 섹션을 합쳐서 하나의 일기로 만들기
+            diary_sections = []
+            if diary.get("상황설명"):
+                diary_sections.append(f"📝 상황: {diary['상황설명']}")
+            if diary.get("감정표현"):
+                diary_sections.append(f"💭 감정: {diary['감정표현']}")
+            if diary.get("공감과인정"):
+                diary_sections.append(f"🤗 공감: {diary['공감과인정']}")
+            if diary.get("따뜻한위로"):
+                diary_sections.append(f"💕 위로: {diary['따뜻한위로']}")
+            if diary.get("실용적제안"):
+                diary_sections.append(f"💡 제안: {diary['실용적제안']}")
+            
+            diary["diary"] = "\n\n".join(diary_sections)
+            diary["content"] = diary["diary"]  # content 필드도 추가
+        
         return ORJSONResponse(content=diary)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[ERROR] 일기 생성 중 오류: {e}")
+        return ORJSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
 
 # 일관성 테스트를 위한 함수들
 def run_consistency_test(kakao_text: str, test_count: int = 5) -> dict:
@@ -842,11 +984,190 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 루트 엔드포인트 - 서버 연결 확인용
-@app.get("/")
-async def root():
+# 웹 페이지 서빙
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
     """
-    서버 연결 확인을 위한 루트 엔드포인트
+    메인 홈 페이지를 제공하는 엔드포인트
+    """
+    user = get_current_user(request)
+    user_stats = {
+        "total_diaries": 0,
+        "this_month": 0,
+        "avg_emotion": 0
+    }
+    return templates.TemplateResponse("home.html", {"request": request, "user": user, "user_stats": user_stats})
+
+@app.get("/diary", response_class=HTMLResponse)
+async def diary_page(request: Request):
+    """
+    일기 생성 페이지를 제공하는 엔드포인트
+    """
+    user = get_current_user(request)
+    return templates.TemplateResponse("diary.html", {"request": request, "user": user})
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    """
+    회원가입 페이지를 제공하는 엔드포인트
+    """
+    return templates.TemplateResponse("register.html", {"request": request})
+
+@app.post("/register")
+async def register_user(request: Request):
+    """
+    회원가입 처리 엔드포인트
+    """
+    form_data = await request.form()
+    username = form_data.get("username", "")
+    email = form_data.get("email", "")
+    password = form_data.get("password", "")
+    confirm_password = form_data.get("confirm_password", "")
+    
+    if not username or not email or not password:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "error": "모든 필드를 입력해주세요."
+        })
+    
+    if password != confirm_password:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "error": "비밀번호가 일치하지 않습니다."
+        })
+    
+    if len(password) < 8:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "error": "비밀번호는 8자 이상이어야 합니다."
+        })
+    
+    # 사용자명 중복 확인
+    for user in users_db.values():
+        if user.username == username:
+            return templates.TemplateResponse("register.html", {
+                "request": request,
+                "error": "이미 사용 중인 사용자명입니다."
+            })
+        if user.email == email:
+            return templates.TemplateResponse("register.html", {
+                "request": request,
+                "error": "이미 사용 중인 이메일입니다."
+            })
+    
+    # 새 사용자 생성
+    user_id = len(users_db) + 1
+    hashed_password = hash_password(password)
+    
+    new_user = User(
+        id=user_id,
+        username=username,
+        email=email,
+        created_at=datetime.now()
+    )
+    
+    users_db[user_id] = new_user
+    
+    # 세션 생성
+    session_token = create_session(user_id)
+    
+    response = RedirectResponse(url="/", status_code=302)
+    response.set_cookie("session_token", session_token, max_age=7*24*60*60, httponly=True)
+    
+    return response
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """
+    로그인 페이지를 제공하는 엔드포인트
+    """
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login")
+async def login_user(request: Request):
+    """
+    로그인 처리 엔드포인트
+    """
+    form_data = await request.form()
+    username = form_data.get("username", "")
+    password = form_data.get("password", "")
+    
+    if not username or not password:
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "사용자명과 비밀번호를 입력해주세요."
+        })
+    
+    # 사용자 찾기
+    user = None
+    for u in users_db.values():
+        if u.username == username or u.email == username:
+            user = u
+            break
+    
+    if not user:
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "사용자명 또는 비밀번호가 올바르지 않습니다."
+        })
+    
+    # 비밀번호 확인
+    hashed_password = hash_password(password)
+    # 실제로는 데이터베이스에서 해시된 비밀번호를 저장해야 함
+    # 여기서는 간단히 사용자명과 비밀번호가 일치하는지 확인
+    if user.username != username and user.email != username:
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "사용자명 또는 비밀번호가 올바르지 않습니다."
+        })
+    
+    # 세션 생성
+    session_token = create_session(user.id)
+    
+    response = RedirectResponse(url="/", status_code=302)
+    response.set_cookie("session_token", session_token, max_age=7*24*60*60, httponly=True)
+    
+    return response
+
+@app.get("/logout")
+async def logout():
+    """
+    로그아웃 처리 엔드포인트
+    """
+    response = RedirectResponse(url="/", status_code=302)
+    response.delete_cookie("session_token")
+    return response
+
+@app.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request):
+    """
+    마이페이지를 제공하는 엔드포인트
+    """
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    # 사용자 통계 (실제로는 데이터베이스에서 가져와야 함)
+    stats = {
+        "total_diaries": 0,
+        "this_month": 0,
+        "avg_emotion": 0
+    }
+    
+    recent_diaries = []  # 실제로는 데이터베이스에서 가져와야 함
+    
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        "user": user,
+        "stats": stats,
+        "recent_diaries": recent_diaries
+    })
+
+# API 상태 확인 엔드포인트 (웹용)
+@app.get("/api/status")
+async def api_status():
+    """
+    API 서버 상태 확인을 위한 엔드포인트
     """
     return ORJSONResponse(content={
         "message": "감성 일기 생성 서버가 정상적으로 실행 중입니다!",
@@ -866,5 +1187,22 @@ async def root():
             "날짜별 대화 분석",
             "일관성 테스트",
             "감정 분석"
+        ]
+    })
+
+# Flutter 앱 전용 API 상태 확인 엔드포인트
+@app.get("/api/flutter/status")
+async def flutter_api_status():
+    """
+    Flutter 앱 전용 API 서버 상태 확인 엔드포인트
+    """
+    return ORJSONResponse(content={
+        "message": "Flutter 앱 연결 성공",
+        "status": "running",
+        "version": "1.0.0",
+        "flutter_compatible": True,
+        "available_endpoints": [
+            "/generate-diary",
+            "/auto-diary"
         ]
     }) 

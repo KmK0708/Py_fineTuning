@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}마이페이지 - 감성 일기 생성기{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <!-- 프로필 정보 -->
+        <div class="col-lg-4 mb-4">
+            <div class="card shadow">
+                <div class="card-body text-center">
+                    <div class="profile-avatar mb-3">
+                        <i class="fas fa-user-circle fa-5x text-primary"></i>
+                    </div>
+                    <h4>{{ user.username }}</h4>
+                    <p class="text-muted">{{ user.email }}</p>
+                    <p class="text-muted">가입일: {{ user.created_at.strftime('%Y년 %m월 %d일') }}</p>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+                            <i class="fas fa-edit"></i> 프로필 수정
+                        </button>
+                        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                            <i class="fas fa-key"></i> 비밀번호 변경
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 통계 및 활동 -->
+        <div class="col-lg-8">
+            <!-- 통계 카드 -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-primary">{{ stats.total_diaries }}</h3>
+                            <p class="card-text">총 일기 수</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-success">{{ stats.this_month }}</h3>
+                            <p class="card-text">이번 달 일기</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-info">{{ stats.avg_emotion }}</h3>
+                            <p class="card-text">평균 감정 점수</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 최근 일기 -->
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list"></i> 최근 일기</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_diaries %}
+                    <div class="list-group list-group-flush">
+                        {% for diary in recent_diaries %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ diary.date }}</h6>
+                                    <p class="mb-1 text-muted">{{ diary.summary[:100] }}...</p>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-muted">{{ diary.created_at.strftime('%m월 %d일') }}</small>
+                                    <div class="mt-1">
+                                        <a href="/diary/{{ diary.id }}" class="btn btn-sm btn-outline-primary">보기</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center py-3">아직 작성한 일기가 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 프로필 수정 모달 -->
+<div class="modal fade" id="editProfileModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">프로필 수정</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/profile/edit">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_username" class="form-label">사용자명</label>
+                        <input type="text" class="form-control" id="edit_username" name="username" value="{{ user.username }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_email" class="form-label">이메일</label>
+                        <input type="email" class="form-control" id="edit_email" name="email" value="{{ user.email }}" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-primary">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 비밀번호 변경 모달 -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">비밀번호 변경</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/profile/change-password">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label">현재 비밀번호</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label">새 비밀번호</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_new_password" class="form-label">새 비밀번호 확인</label>
+                        <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-primary">변경</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 비밀번호 변경 폼 유효성 검사
+    const changePasswordForm = document.querySelector('form[action="/profile/change-password"]');
+    if (changePasswordForm) {
+        changePasswordForm.addEventListener('submit', function(e) {
+            const newPassword = document.getElementById('new_password').value;
+            const confirmPassword = document.getElementById('confirm_new_password').value;
+            
+            if (newPassword !== confirmPassword) {
+                e.preventDefault();
+                alert('새 비밀번호가 일치하지 않습니다.');
+                return;
+            }
+            
+            if (newPassword.length < 8) {
+                e.preventDefault();
+                alert('비밀번호는 8자 이상이어야 합니다.');
+                return;
+            }
+        });
+    }
+});
+</script>
+{% endblock %} 

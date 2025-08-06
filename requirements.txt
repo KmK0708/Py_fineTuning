@@ -2,3 +2,6 @@ streamlit
 openai
 python-dotenv
 python-multipart
+fastapi
+uvicorn
+jinja2
