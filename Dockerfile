@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
-# 한국어 로케일 설정
-RUN locale-gen ko_KR.UTF-8
+# 로케일 설정 (안전한 방식)
+RUN locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8
 
 # Python 의존성 파일 복사 및 설치
 COPY requirements.txt .
@@ -26,8 +27,8 @@ EXPOSE 8000
 ENV PYTHONPATH=/app
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV LANG=ko_KR.UTF-8
-ENV LC_ALL=ko_KR.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 ENV PYTHONIOENCODING=utf-8
 
 # 애플리케이션 실행
