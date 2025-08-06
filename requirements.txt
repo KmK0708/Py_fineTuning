@@ -5,3 +5,5 @@ python-multipart
 fastapi
 uvicorn
 jinja2
+orjson
+aiofiles

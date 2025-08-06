@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: emotion-diary-app
+    env: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/status
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+    buildCommand: docker build -t emotion-diary-app .
+    startCommand: docker run -p $PORT:8000 emotion-diary-app 

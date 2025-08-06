@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # 백엔드 애플리케이션
+  emotion-diary-app:
+    build: .
+    container_name: emotion-diary-backend
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - emotion-diary-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx 리버스 프록시
+  nginx:
+    image: nginx:alpine
+    container_name: emotion-diary-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl
+    depends_on:
+      - emotion-diary-app
+    restart: unless-stopped
+    networks:
+      - emotion-diary-network
+
+networks:
+  emotion-diary-network:
+    driver: bridge 
