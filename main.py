@@ -205,6 +205,8 @@ def analyze_events_by_date(chat_by_date: dict) -> dict:
         # 이벤트 분석 프롬프트 (Few-Shot 예시 추가)
         event_analysis_prompt = f"""
         아래 카카오톡 대화에서 어떤 주요 이벤트나 일이 있었는지 분석해주세요.
+        
+        ⚠️ **중요**: 반드시 한국어로만 응답해주세요. 다른 언어는 사용하지 마세요.
 
         ### 분석 규칙
         1. 대화 내용을 기반으로 사실에 입각하여 분석합니다.
@@ -300,6 +302,8 @@ def detect_prompt_conflict(user_prompt: str, kakao_text: str) -> dict:
     conflict_detection_prompt = f"""
     사용자가 작성한 프롬프트와 카카오톡 대화 내용을 비교하여 충돌 여부를 분석해주세요.
     
+    ⚠️ **중요**: 반드시 한국어로만 응답해주세요. 다른 언어는 사용하지 마세요.
+    
     ### 사용자 프롬프트:
     {user_prompt}
     
@@ -350,6 +354,8 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         # 1단계: 요약 생성 (더 구체적인 프롬프트)
         summary_prompt = f"""
         아래 카카오톡 대화를 분석하여 객관적이고 일관된 요약을 작성하세요.
+        
+        ⚠️ **중요**: 반드시 한국어로만 응답해주세요. 다른 언어는 사용하지 마세요.
 
         대화 내용:
         {data.kakao_text}
@@ -408,6 +414,8 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         # 3단계: 감성 일기 생성 (Few-Shot 예시 추가)
         diary_prompt = f"""
         당신은 카카오톡 대화를 분석하여, 주어진 규칙과 예시에 따라 일관된 감성 일기를 작성하는 전문가입니다.
+        
+        ⚠️ **중요**: 반드시 한국어로만 응답해주세요. 다른 언어는 사용하지 마세요.
 
         ### 작성 규칙
         1. 대화 내용을 객관적으로 분석하여 일관된 해석을 제공해야 합니다.
@@ -507,6 +515,7 @@ def generate_diary_with_prompt_handling(data: DiaryRequest) -> dict:
         아래 카카오톡 대화 내용을 바탕으로, 감정 상태를 '좋음', '평범함', '나쁨' 세 가지로 분류하고
         각 감정이 차지하는 비율(%)을 추정해서 아래 JSON 형식으로만 응답하세요.
         반드시 세 감정의 합이 100이 되도록 하세요.
+        ⚠️ **중요**: 반드시 한국어로만 응답해주세요. 다른 언어는 사용하지 마세요.
 
         예시:
         {{
