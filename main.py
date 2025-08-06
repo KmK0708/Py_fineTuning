@@ -15,6 +15,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import hashlib
 import secrets
 from datetime import datetime, timedelta
+import locale
+import sys
 
 
 # .env 파일의 경로를 절대 경로로 명시
@@ -22,6 +24,23 @@ from datetime import datetime, timedelta
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path)        # 위에서 지정한 경로의 .env 파일을 로드 (환경 변수 설정)
 print("✅ API 키 확인:", os.getenv("OPENAI_API_KEY"))   # 환경 변수가 제대로 로드되었는지 확인용 (디버깅) - .env 에 api 키 있는데 안불러와져서 확인차 작성
+
+# 한국어 환경 설정
+try:
+    locale.setlocale(locale.LC_ALL, 'ko_KR.UTF-8')
+    print("✅ 한국어 로케일 설정 완료")
+except locale.Error:
+    try:
+        locale.setlocale(locale.LC_ALL, 'ko_KR')
+        print("✅ 한국어 로케일 설정 완료 (대체)")
+    except locale.Error:
+        print("⚠️ 한국어 로케일 설정 실패, 기본 로케일 사용")
+        locale.setlocale(locale.LC_ALL, '')
+
+# 인코딩 설정
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))    # - 인증 실패 시 에러 발생 가능하므로 os.getenv()가 None이면 예외 처리 필요
 
