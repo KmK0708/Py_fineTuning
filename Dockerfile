@@ -6,12 +6,7 @@ WORKDIR /app
 # 시스템 패키지 업데이트 및 필요한 패키지 설치
 RUN apt-get update && apt-get install -y \
     gcc \
-    locales \
     && rm -rf /var/lib/apt/lists/*
-
-# 로케일 설정 (안전한 방식)
-RUN locale-gen en_US.UTF-8 && \
-    update-locale LANG=en_US.UTF-8
 
 # Python 의존성 파일 복사 및 설치
 COPY requirements.txt .
@@ -27,8 +22,6 @@ EXPOSE 8000
 ENV PYTHONPATH=/app
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
 ENV PYTHONIOENCODING=utf-8
 
 # 애플리케이션 실행

@@ -15,7 +15,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import hashlib
 import secrets
 from datetime import datetime, timedelta
-import locale
 import sys
 
 
@@ -25,15 +24,7 @@ dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path)        # 위에서 지정한 경로의 .env 파일을 로드 (환경 변수 설정)
 print("✅ API 키 확인:", os.getenv("OPENAI_API_KEY"))   # 환경 변수가 제대로 로드되었는지 확인용 (디버깅) - .env 에 api 키 있는데 안불러와져서 확인차 작성
 
-# 한국어 환경 설정 (안전한 방식)
-try:
-    # 먼저 시스템 기본 로케일로 설정
-    locale.setlocale(locale.LC_ALL, '')
-    print("✅ 시스템 기본 로케일 설정 완료")
-except locale.Error:
-    print("⚠️ 로케일 설정 실패, 기본값 사용")
-
-# 인코딩 설정
+# 인코딩 설정 (간단한 방식)
 try:
     if sys.stdout.encoding != 'utf-8':
         sys.stdout.reconfigure(encoding='utf-8')
