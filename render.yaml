@@ -1,12 +1,10 @@
 services:
   - type: web
     name: emotion-diary-app
-    env: python
+    env: docker
     plan: free
     region: oregon
     healthCheckPath: /api/status
     envVars:
       - key: OPENAI_API_KEY
-        sync: false
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py 
+        sync: false 
