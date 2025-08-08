@@ -172,12 +172,14 @@ def extract_chat_by_date(text: str, target_date: str | None = None):
         line = line.strip()
         date_match = date_pattern.search(line)
         if date_match:
-            date_str = f"{date_match.group(1)}년 {int(date_match.group(2))}월 {int(date_match.group(3))}일"
-            current_date = date_str
-            if current_date not in chat_by_date:
-                chat_by_date[current_date] = []
-            last_msg_ref = None
-            continue
+            # 날짜 헤더 라인인지 확인 (메시지가 없는 경우)
+            if not msg_phone_pattern.match(line) and not msg_pc_pattern.match(line):
+                date_str = f"{date_match.group(1)}년 {int(date_match.group(2))}월 {int(date_match.group(3))}일"
+                current_date = date_str
+                if current_date not in chat_by_date:
+                    chat_by_date[current_date] = []
+                last_msg_ref = None
+                continue
             
         # 컴퓨터 형식 메시지 라인인지 확인
         msg_pc_match = msg_pc_pattern.match(line)
