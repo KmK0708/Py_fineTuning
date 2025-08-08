@@ -116,22 +116,36 @@ def get_today_str_kakao():
 
 #  카카오톡 txt 파일에서 대화 내용만 추출하는 함수
 # - 날짜 기준이 아닌 전체 텍스트 중 유효한 대화 메시지를 필터링함
+#  카카오톡 txt 파일에서 대화 내용만 추출하는 함수
+# - 날짜 기준이 아닌 전체 텍스트 중 유효한 대화 메시지를 필터링함
 def extract_today_chat(text: str, _: str = "") -> str:          
     lines = text.splitlines()         # 텍스트를 줄 단위로 나눔
     chat = []                         # 유효한 메시지를 저장할 리스트
 
-    #  [이름] [오후 3:36] 메시지
-    #  정규 표현식 정의: '[이름] [오전/오후 시:분] 메시지' 패턴 추출용
-    msg = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
+    # 컴퓨터 카카오톡 형식: [이름] [오후 3:36] 메시지
+    msg_pc = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
+    # 폰 카카오톡 형식: 2025년 8월 8일 오전 12:51, 영제 : 메시지
+    msg_phone = re.compile(r"^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(오전|오후)\s*\d{1,2}:\d{2},\s*(.*?)\s*:\s*(.*)")
 
     for ln in lines:
         ln = ln.strip()     # 각 줄의 앞뒤 공백 제거
-        matching = msg.match(ln)       # 정규표현식과 매칭 시도
-        if matching:        
-            msg_txt = matching.group(3).strip()     # 대화 내용만 추출 (이름/시간 제외)
+        
+        # 컴퓨터 형식 매칭 시도
+        matching_pc = msg_pc.match(ln)
+        if matching_pc:        
+            msg_txt = matching_pc.group(3).strip()     # 대화 내용만 추출 (이름/시간 제외)
             # 시스템 메시지나 불필요한 항목 필터링
             # 예: [사진], 이모티콘, 입장/퇴장 알림 등은 제외
             if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔"]):
+                chat.append(msg_txt)    # 유효한 메시지만 리스트에 추가하기
+            continue
+            
+        # 폰 형식 매칭 시도
+        matching_phone = msg_phone.match(ln)
+        if matching_phone:
+            msg_txt = matching_phone.group(3).strip()     # 대화 내용만 추출
+            # 시스템 메시지나 불필요한 항목 필터링
+            if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]):
                 chat.append(msg_txt)    # 유효한 메시지만 리스트에 추가하기
 
     return "\n".join(chat[-30:]) # 최근 메시지 30개만 추출하여 반환하기 (추후 변동 예정)
@@ -143,8 +157,14 @@ def extract_chat_by_date(text: str, target_date: str | None = None):
     chat_by_date = {}
     current_date = None
     date_pattern = re.compile(r"(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일")
-    msg_pattern = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
+    
+    # 컴퓨터 메시지 패턴: [이름] [오전/오후 시:분] 메시지
+    msg_pc_pattern = re.compile(r"^\[(.*?)\]\s*\[(오전|오후)\s*\d{1,2}:\d{2}\]\s*(.*)")
+    # 폰 메시지 패턴: 2025년 8월 8일 오전 12:51, 영제 : 메시지
+    msg_phone_pattern = re.compile(r"^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(오전|오후)\s*\d{1,2}:\d{2},\s*(.*?)\s*:\s*(.*)")
+    
     last_msg_ref = None  # 마지막 메시지 리스트의 참조
+    
     for line in lines:
         line = line.strip()
         date_match = date_pattern.search(line)
@@ -155,17 +175,31 @@ def extract_chat_by_date(text: str, target_date: str | None = None):
                 chat_by_date[current_date] = []
             last_msg_ref = None
             continue
-        msg_match = msg_pattern.match(line)
-        if msg_match and current_date:
-            msg_txt = msg_match.group(3).strip()
+            
+        # 컴퓨터 형식 메시지 라인인지 확인
+        msg_pc_match = msg_pc_pattern.match(line)
+        if msg_pc_match and current_date:
+            msg_txt = msg_pc_match.group(3).strip()
             if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔"]):
                 chat_by_date[current_date].append(msg_txt)
                 last_msg_ref = chat_by_date[current_date]
+            continue
+            
+        # 폰 형식 메시지 라인인지 확인
+        msg_phone_match = msg_phone_pattern.match(line)
+        if msg_phone_match and current_date:
+            msg_txt = msg_phone_match.group(3).strip()
+            if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]):
+                chat_by_date[current_date].append(msg_txt)
+                last_msg_ref = chat_by_date[current_date]
+            continue
         elif current_date and last_msg_ref is not None and line:
             # 메시지 줄이 아니고, 빈 줄도 아니면 이전 메시지에 이어붙임
             last_msg_ref[-1] += "\n" + line
+    
     chat_by_date = {k.strip(): v for k, v in chat_by_date.items()}
     print(f"📅 추출된 날짜 목록: {list(chat_by_date.keys())}")
+    
     # 이하 기존 로직 동일
     if target_date:
         if target_date in chat_by_date:
