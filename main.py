@@ -145,7 +145,10 @@ def extract_today_chat(text: str, _: str = "") -> str:
         if matching_phone:
             msg_txt = matching_phone.group(3).strip()     # 대화 내용만 추출
             # 시스템 메시지나 불필요한 항목 필터링
-            if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]):
+            # 파일 확장자나 해시값 같은 파일명 제외
+            if (not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]) and
+                not re.match(r'^[a-f0-9]{32,}\.[a-z]+$', msg_txt) and  # 해시값 파일명
+                not re.match(r'^.*\.(png|jpg|jpeg|gif|mp4|mov|avi)$', msg_txt.lower())):  # 일반 파일명
                 chat.append(msg_txt)    # 유효한 메시지만 리스트에 추가하기
 
     return "\n".join(chat[-30:]) # 최근 메시지 30개만 추출하여 반환하기 (추후 변동 예정)
@@ -189,7 +192,10 @@ def extract_chat_by_date(text: str, target_date: str | None = None):
         msg_phone_match = msg_phone_pattern.match(line)
         if msg_phone_match and current_date:
             msg_txt = msg_phone_match.group(3).strip()
-            if not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]):
+            # 파일 확장자나 해시값 같은 파일명 제외
+            if (not any(k in msg_txt for k in ["[사진]", "이모티콘", "님이 입장", "님이 나갔", "사진"]) and
+                not re.match(r'^[a-f0-9]{32,}\.[a-z]+$', msg_txt) and  # 해시값 파일명
+                not re.match(r'^.*\.(png|jpg|jpeg|gif|mp4|mov|avi)$', msg_txt.lower())):  # 일반 파일명
                 chat_by_date[current_date].append(msg_txt)
                 last_msg_ref = chat_by_date[current_date]
             continue
